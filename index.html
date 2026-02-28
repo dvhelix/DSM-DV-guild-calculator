@@ -259,6 +259,7 @@
       <button class="tab-btn active" id="btnAuto">자동 계산기</button>
       <button class="tab-btn" id="btnManual">수동 계산기</button>
       <button class="tab-btn" id="btnSpirit">정령 예측기</button>
+      <button class="tab-btn" id="btnGuild">길드전 배치</button>
     </div>
     <div class="hint small">
       모든 입력은 <b>HP / ATK / DEF</b> 순서입니다. · made by 헬릭스
@@ -618,6 +619,41 @@
         </fieldset>
       </div>
     </div>
+  </div>
+
+  <!-- html2canvas -->
+
+  <!-- ===== 길드전 배치 탭 ===== -->
+  <div id="guildCalc" class="calc-container">
+    <h3 style="margin:0 0 8px;font-size:14px">⚔️ 길드전 배치</h3>
+
+    <!-- 요일 탭 -->
+    <div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:6px;border-bottom:2px solid var(--border);padding-bottom:4px;">
+      <button class="dragon-tab active" onclick="switchGuildDay('wed')" data-guild-day="wed">수요일</button>
+      <button class="dragon-tab" onclick="switchGuildDay('thu')" data-guild-day="thu">목요일</button>
+      <button class="dragon-tab" onclick="switchGuildDay('fri')" data-guild-day="fri">금요일</button>
+      <button class="dragon-tab" onclick="switchGuildDay('sat')" data-guild-day="sat">토요일</button>
+      <button class="dragon-tab" onclick="switchGuildDay('sun')" data-guild-day="sun">일요일</button>
+    </div>
+
+    <!-- 상대 길드 이름 -->
+    <div style="margin-bottom:6px;display:flex;align-items:center;gap:8px;">
+      <strong style="font-size:13px;">상대 길드:</strong>
+      <input id="guildOpponentName" type="text" placeholder="상대 길드 이름" style="width:200px;" onchange="autoSaveGuild()">
+    </div>
+
+    <!-- 유저 추가 + 도구 버튼 -->
+    <div class="toolbar" style="margin-bottom:8px;">
+      <button class="btn primary" type="button" onclick="addGuildUser()">유저 추가</button>
+      <button class="btn" onclick="resetCurrentDay()" style="background:#ff9800;color:#fff;border-color:#ff9800;">현재 요일 초기화</button>
+      <button class="btn" onclick="resetAllGuildDays()" style="background:#ff6b6b;color:#fff;border-color:#ff6b6b;">전체 요일 초기화</button>
+    </div>
+
+    <!-- 유저 목록 -->
+    <div id="guildUserList"></div>
+
+    <!-- 전체 요약 -->
+    <div id="guildSummary" style="background:#e8f5e9;padding:10px 14px;border-radius:8px;margin-top:8px;display:none;"></div>
   </div>
 
   <!-- html2canvas -->
@@ -3234,17 +3270,20 @@ function renderOneResult(idx){
   const autoDiv=document.getElementById('autoCalc');
   const manualDiv=document.getElementById('manualCalc');
   const spiritDiv=document.getElementById('spiritCalc');
+  const guildDiv=document.getElementById('guildCalc');
   const btnAuto=document.getElementById('btnAuto');
   const btnManual=document.getElementById('btnManual');
   const btnSpirit=document.getElementById('btnSpirit');
+  const btnGuild=document.getElementById('btnGuild');
 
   // 각 모드의 독립적인 스크롤 위치 저장
   let autoScrollPos = 0;
   let manualScrollPos = 0;
   let spiritScrollPos = 0;
+  let guildScrollPos = 0;
 
-  const allDivs = [autoDiv, manualDiv, spiritDiv];
-  const allBtns = [btnAuto, btnManual, btnSpirit];
+  const allDivs = [autoDiv, manualDiv, spiritDiv, guildDiv];
+  const allBtns = [btnAuto, btnManual, btnSpirit, btnGuild];
 
   // ===== UI 모드 전환 =====
   function switchMode(mode){
@@ -3270,11 +3309,18 @@ function renderOneResult(idx){
       window.scrollTo(0, spiritScrollPos);
       spiritScrollPos = 0;
       initSpiritPredAccessories();
+    }else if(mode==='guild'){
+      guildDiv.classList.add('active');
+      btnGuild.classList.add('active');
+      window.scrollTo(0, guildScrollPos);
+      guildScrollPos = 0;
+      initGuildGrid();
     }
   }
   btnAuto.onclick=()=>switchMode('auto');
   btnManual.onclick=()=>switchMode('manual');
   btnSpirit.onclick=()=>switchMode('spirit');
+  btnGuild.onclick=()=>switchMode('guild');
 
   // ===== 정령 예측기 =====
   function initSpiritPredAccessories() {
@@ -3578,6 +3624,241 @@ function renderOneResult(idx){
     const modal = document.getElementById('helpModal');
     if (modal) modal.remove();
   }
+  // ===== 길드전 배치 시스템 =====
+  const GUILD_DAYS = ['wed','thu','fri','sat','sun'];
+  const GUILD_DAY_LABELS = {wed:'수요일',thu:'목요일',fri:'금요일',sat:'토요일',sun:'일요일'};
+  let currentGuildDay = 'wed';
+  let guildData = {};
+  let guildGridInitialized = false;
+
+  function createEmptyDayData() {
+    return { opponent: '', users: [] };
+  }
+
+  function createEmptyUser() {
+    return { name: '', dragons: [
+      { hp: 0, atk: 0, df: 0 },
+      { hp: 0, atk: 0, df: 0 },
+      { hp: 0, atk: 0, df: 0 }
+    ]};
+  }
+
+  function loadGuildData() {
+    try {
+      const saved = localStorage.getItem('guildBattleData');
+      if (saved) guildData = JSON.parse(saved);
+    } catch(e) { console.error('길드전 데이터 로드 실패:', e); }
+    GUILD_DAYS.forEach(day => {
+      if (!guildData[day]) guildData[day] = createEmptyDayData();
+    });
+  }
+
+  function saveGuildDataToStorage() {
+    try { localStorage.setItem('guildBattleData', JSON.stringify(guildData)); }
+    catch(e) { console.error('길드전 데이터 저장 실패:', e); }
+  }
+
+  function guildBVal(d) { return d.hp * d.atk * d.df; }
+
+  function fmtB(val) {
+    if (!val || val === 0) return '-';
+    return (val / 1e6).toFixed(3);
+  }
+
+  // UI → guildData 동기화 후 저장
+  function autoSaveGuild() {
+    const dayData = guildData[currentGuildDay];
+    if (!dayData) return;
+    dayData.opponent = document.getElementById('guildOpponentName')?.value || '';
+    dayData.users.forEach((user, u) => {
+      user.name = document.getElementById(`gu_name_${u}`)?.value || '';
+      for (let d = 0; d < 3; d++) {
+        user.dragons[d].hp = Number(document.getElementById(`gu_${u}_d${d}_hp`)?.value) || 0;
+        user.dragons[d].atk = Number(document.getElementById(`gu_${u}_d${d}_atk`)?.value) || 0;
+        user.dragons[d].df = Number(document.getElementById(`gu_${u}_d${d}_df`)?.value) || 0;
+      }
+    });
+    saveGuildDataToStorage();
+    updateAllGuildBValues();
+  }
+
+  // 요일 탭 전환
+  function switchGuildDay(day) {
+    autoSaveGuild();
+    currentGuildDay = day;
+    document.querySelectorAll('[data-guild-day]').forEach(btn => btn.classList.remove('active'));
+    document.querySelector(`[data-guild-day="${day}"]`)?.classList.add('active');
+    renderGuildUsers();
+  }
+
+  // 유저 추가
+  function addGuildUser() {
+    const dayData = guildData[currentGuildDay];
+    if (!dayData) return;
+    autoSaveGuild();
+    dayData.users.push(createEmptyUser());
+    saveGuildDataToStorage();
+    renderGuildUsers();
+  }
+
+  // 유저 삭제
+  function removeGuildUser(idx) {
+    const dayData = guildData[currentGuildDay];
+    if (!dayData) return;
+    autoSaveGuild();
+    dayData.users.splice(idx, 1);
+    saveGuildDataToStorage();
+    renderGuildUsers();
+  }
+
+  // 유저 목록 렌더링
+  function renderGuildUsers() {
+    const dayData = guildData[currentGuildDay];
+    if (!dayData) return;
+    const listEl = document.getElementById('guildUserList');
+    if (!listEl) return;
+
+    document.getElementById('guildOpponentName').value = dayData.opponent || '';
+
+    if (dayData.users.length === 0) {
+      listEl.innerHTML = '<p style="color:#999;text-align:center;padding:10px 0;">유저를 추가해주세요</p>';
+      updateGuildSummary();
+      return;
+    }
+
+    listEl.innerHTML = '<div style="display:grid;grid-template-columns:repeat(3,minmax(0,320px));gap:8px;justify-content:center;">' + dayData.users.map((user, u) => {
+      return `
+        <fieldset style="margin:0;padding:6px 8px;">
+          <legend style="display:flex;align-items:center;gap:6px;">
+            <input id="gu_name_${u}" type="text" value="${user.name}" placeholder="유저 ${u+1}" style="width:80px;height:22px;font-size:12px;font-weight:700;border:1px solid var(--border);border-radius:3px;padding:0 4px;" onchange="autoSaveGuild()">
+            <button onclick="removeGuildUser(${u})" style="background:#ff6b6b;color:#fff;border:none;border-radius:3px;padding:1px 6px;cursor:pointer;font-size:10px;">✕</button>
+          </legend>
+          <table style="border-collapse:collapse;font-size:11px;margin:0 auto;">
+            <colgroup>
+              <col style="width:30px;">
+              <col style="width:62px;">
+              <col style="width:62px;">
+              <col style="width:62px;">
+              <col style="width:58px;">
+            </colgroup>
+            <thead>
+              <tr style="background:#f1f5f9;">
+                <th style="padding:2px;border:1px solid var(--border);"></th>
+                <th style="padding:2px;border:1px solid var(--border);font-size:10px;color:#666;">HP</th>
+                <th style="padding:2px;border:1px solid var(--border);font-size:10px;color:#666;">ATK</th>
+                <th style="padding:2px;border:1px solid var(--border);font-size:10px;color:#666;">DEF</th>
+                <th style="padding:2px;border:1px solid var(--border);font-size:10px;color:#666;">B-Val</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${[0,1,2].map(d => `
+              <tr>
+                <td style="padding:2px 3px;border:1px solid var(--border);font-weight:700;color:var(--accent);font-size:10px;text-align:center;">드래곤${d+1}</td>
+                <td style="padding:1px;border:1px solid var(--border);"><input id="gu_${u}_d${d}_hp" type="number" value="${user.dragons[d].hp || ''}" placeholder="0" style="width:100%;height:20px;font-size:11px;text-align:center;border:none;background:transparent;box-sizing:border-box;" onchange="autoSaveGuild()"></td>
+                <td style="padding:1px;border:1px solid var(--border);"><input id="gu_${u}_d${d}_atk" type="number" value="${user.dragons[d].atk || ''}" placeholder="0" style="width:100%;height:20px;font-size:11px;text-align:center;border:none;background:transparent;box-sizing:border-box;" onchange="autoSaveGuild()"></td>
+                <td style="padding:1px;border:1px solid var(--border);"><input id="gu_${u}_d${d}_df" type="number" value="${user.dragons[d].df || ''}" placeholder="0" style="width:100%;height:20px;font-size:11px;text-align:center;border:none;background:transparent;box-sizing:border-box;" onchange="autoSaveGuild()"></td>
+                <td style="padding:2px 3px;border:1px solid var(--border);font-size:10px;font-weight:700;color:#d32f2f;text-align:right;" id="gu_${u}_d${d}_bv">-</td>
+              </tr>
+              `).join('')}
+              <tr style="background:#f8fafc;">
+                <td colspan="4" style="padding:2px 4px;border:1px solid var(--border);text-align:right;font-weight:700;font-size:11px;color:#1a237e;">총 B-Value</td>
+                <td style="padding:2px 3px;border:1px solid var(--border);text-align:right;font-weight:700;font-size:11px;color:#1a237e;" id="gu_${u}_totalB">-</td>
+              </tr>
+            </tbody>
+          </table>
+        </fieldset>
+      `;
+    }).join('') + '</div>';
+
+    updateAllGuildBValues();
+  }
+
+  // 모든 유저의 B-Value 업데이트
+  function updateAllGuildBValues() {
+    const dayData = guildData[currentGuildDay];
+    if (!dayData) return;
+
+    dayData.users.forEach((user, u) => {
+      let totalB = 0;
+      for (let d = 0; d < 3; d++) {
+        const hp = Number(document.getElementById(`gu_${u}_d${d}_hp`)?.value) || 0;
+        const atk = Number(document.getElementById(`gu_${u}_d${d}_atk`)?.value) || 0;
+        const df = Number(document.getElementById(`gu_${u}_d${d}_df`)?.value) || 0;
+        const bv = guildBVal({hp, atk, df});
+        const el = document.getElementById(`gu_${u}_d${d}_bv`);
+        if (el) el.textContent = fmtB(bv);
+        totalB += bv;
+      }
+      const totalEl = document.getElementById(`gu_${u}_totalB`);
+      if (totalEl) totalEl.textContent = fmtB(totalB);
+    });
+
+    updateGuildSummary();
+  }
+
+  // 전체 요약
+  function updateGuildSummary() {
+    const summaryEl = document.getElementById('guildSummary');
+    if (!summaryEl) return;
+    const dayData = guildData[currentGuildDay];
+    if (!dayData || dayData.users.length === 0) { summaryEl.style.display = 'none'; return; }
+
+    const hasData = dayData.users.some(u => u.dragons.some(d => d.hp > 0 || d.atk > 0 || d.df > 0));
+    if (!hasData) { summaryEl.style.display = 'none'; return; }
+
+    let grandTotal = 0;
+    dayData.users.forEach(u => u.dragons.forEach(d => grandTotal += guildBVal(d)));
+
+    summaryEl.style.display = 'block';
+    summaryEl.innerHTML = `
+      <div style="font-weight:700;font-size:14px;color:#2e7d32;">
+        📊 ${GUILD_DAY_LABELS[currentGuildDay]} 요약 ${dayData.opponent ? `(vs ${dayData.opponent})` : ''}
+      </div>
+      <div style="font-size:13px;margin-top:4px;">
+        전체 총 B-Value: <strong style="color:#d32f2f;font-size:15px;">${fmtB(grandTotal)}</strong>
+        &nbsp;|&nbsp; 유저 수: <strong>${dayData.users.length}</strong>명
+      </div>
+    `;
+  }
+
+  // 초기화
+  function initGuildGrid() {
+    if (guildGridInitialized) return;
+    guildGridInitialized = true;
+    loadGuildData();
+    renderGuildUsers();
+  }
+
+  function resetCurrentDay() {
+    if (!confirm(`${GUILD_DAY_LABELS[currentGuildDay]} 데이터를 초기화하시겠습니까?`)) return;
+    guildData[currentGuildDay] = createEmptyDayData();
+    saveGuildDataToStorage();
+    renderGuildUsers();
+  }
+
+  function resetAllGuildDays() {
+    if (!confirm('수요일~일요일 모든 길드전 데이터를 초기화하시겠습니까?\n\n※ 이 작업은 되돌릴 수 없습니다.')) return;
+    GUILD_DAYS.forEach(day => guildData[day] = createEmptyDayData());
+    saveGuildDataToStorage();
+    renderGuildUsers();
+    alert('모든 길드전 데이터가 초기화되었습니다.');
+  }
+
+  function saveGuildPng() {
+    autoSaveGuild();
+    const node = document.getElementById('guildCalc');
+    html2canvas(node, {
+      backgroundColor: '#fff', scale: 2,
+      width: node.scrollWidth, height: node.scrollHeight,
+      windowWidth: node.scrollWidth, windowHeight: node.scrollHeight
+    }).then(canvas => {
+      const link = document.createElement('a');
+      link.download = `guild_battle_${GUILD_DAY_LABELS[currentGuildDay]}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    });
+  }
+
   </script>
 </body>
 </html>
