@@ -130,6 +130,13 @@
     fieldset{padding:8px;border-radius:var(--radius-sm);}
     legend{font-size:12px;}
 
+    /* 길드전 배치 모바일 최적화 */
+    #guildUserList fieldset{padding:6px 6px;overflow:visible;}
+    #guildUserList table input[type="number"]{width:100% !important;height:26px !important;font-size:12px !important;padding:0 !important;}
+    #guildUserList table th,
+    #guildUserList table td{padding:2px 3px !important;font-size:11px !important;}
+    #guildUserList legend input[type="text"]{width:80px !important;font-size:12px !important;height:26px !important;}
+
     .sheet{
       min-width:unset;
       width:100%;
@@ -3726,20 +3733,20 @@ function renderOneResult(idx){
       return;
     }
 
-    listEl.innerHTML = '<div style="display:grid;grid-template-columns:repeat(3,minmax(0,420px));gap:12px;justify-content:center;">' + dayData.users.map((user, u) => {
+    listEl.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;">' + dayData.users.map((user, u) => {
       return `
-        <fieldset style="margin:0;padding:10px 12px;">
+        <fieldset style="margin:0;padding:8px 8px;overflow-x:auto;">
           <legend style="display:flex;align-items:center;gap:8px;">
             <input id="gu_name_${u}" type="text" value="${user.name}" placeholder="유저 ${u+1}" style="width:100px;height:28px;font-size:14px;font-weight:700;border:1px solid var(--border);border-radius:3px;padding:0 6px;" onchange="autoSaveGuild()">
             <button onclick="removeGuildUser(${u})" style="background:#ff6b6b;color:#fff;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:12px;">✕</button>
           </legend>
-          <table style="border-collapse:collapse;font-size:13px;margin:0 auto;width:100%;">
+          <table style="border-collapse:collapse;font-size:13px;margin:0 auto;width:100%;table-layout:fixed;">
             <colgroup>
-              <col style="width:64px;">
-              <col style="width:auto;">
-              <col style="width:auto;">
-              <col style="width:auto;">
-              <col style="width:72px;">
+              <col style="width:56px;">
+              <col>
+              <col>
+              <col>
+              <col style="width:60px;">
             </colgroup>
             <thead>
               <tr style="background:#f1f5f9;">
